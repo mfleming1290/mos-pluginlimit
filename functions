@@ -1,0 +1,130 @@
+#!/bin/bash
+
+PLG_DIR="/boot/optional/plugins/pluginlimit"
+SETTINGS_FILE="$PLG_DIR/settings.json"
+API_FILE="/usr/local/lib/mos-api/src/services/plugins.service.js"
+DEFAULT_LIMIT_MB=64
+MIN_LIMIT_MB=1
+MAX_LIMIT_MB=2048
+
+_log() {
+  logger -t "MOS Plugin Limit" "$*" 2>/dev/null || true
+  echo "$*"
+}
+
+_get_requested_limit() {
+  local value
+  value=$(jq -r '.plugin_source_limit_mb // empty' "$SETTINGS_FILE" 2>/dev/null)
+  if ! [[ "$value" =~ ^[0-9]+$ ]]; then
+    value="$DEFAULT_LIMIT_MB"
+  fi
+  echo "$value"
+}
+
+_get_current_limit() {
+  [ -f "$API_FILE" ] || return 1
+  sed -nE 's/.*const MAX_SOURCE_SIZE = ([0-9]+) \* 1024 \* 1024;.*/\1/p' "$API_FILE" | head -n1
+}
+
+_validate_limit() {
+  local value="$1"
+  [[ "$value" =~ ^[0-9]+$ ]] || return 1
+  [ "$value" -ge "$MIN_LIMIT_MB" ] && [ "$value" -le "$MAX_LIMIT_MB" ]
+}
+
+_restart_api_delayed() {
+  # Delay restart long enough for the API request that invoked this function
+  # to return to the UI before the API process is recycled.
+  (
+    sleep 2
+    /etc/init.d/api restart >/dev/null 2>&1
+  ) &
+}
+
+apply_plugin_limit() {
+  local limit current
+  limit=$(_get_requested_limit)
+
+  if ! _validate_limit "$limit"; then
+    _log "Invalid plugin source limit '${limit}'. Allowed range: ${MIN_LIMIT_MB}-${MAX_LIMIT_MB} MB."
+    return 1
+  fi
+
+  if [ ! -f "$API_FILE" ]; then
+    _log "MOS API source file not found: $API_FILE"
+    return 1
+  fi
+
+  if ! grep -qE 'const MAX_SOURCE_SIZE = [0-9]+ \* 1024 \* 1024;' "$API_FILE"; then
+    _log "MAX_SOURCE_SIZE declaration was not found. MOS may have changed its API source layout; no changes were made."
+    return 1
+  fi
+
+  current=$(_get_current_limit || true)
+  if [ "$current" = "$limit" ]; then
+    _log "Plugin source limit is already ${limit} MB."
+    return 0
+  fi
+
+  sed -Ei \
+    "s/(const MAX_SOURCE_SIZE = )[0-9]+( \* 1024 \* 1024;)/\\1${limit}\\2/" \
+    "$API_FILE"
+
+  sed -Ei \
+    "s/Source size exceeds [0-9]+MB limit/Source size exceeds ${limit}MB limit/g; s/Source exceeds [0-9]+MB limit/Source exceeds ${limit}MB limit/g" \
+    "$API_FILE"
+
+  current=$(_get_current_limit || true)
+  if [ "$current" != "$limit" ]; then
+    _log "Patch verification failed; expected ${limit} MB but detected '${current:-unknown}'."
+    return 1
+  fi
+
+  _log "Plugin source limit changed to ${limit} MB. Restarting MOS API in 2 seconds."
+  _restart_api_delayed
+  return 0
+}
+
+restore_default_limit() {
+  local tmp
+  tmp=$(mktemp)
+  jq '.plugin_source_limit_mb = 10' "$SETTINGS_FILE" > "$tmp" && mv "$tmp" "$SETTINGS_FILE"
+  apply_plugin_limit
+}
+
+show_plugin_limit() {
+  local desired current
+  desired=$(_get_requested_limit)
+  current=$(_get_current_limit 2>/dev/null || echo unknown)
+  echo "configured=${desired}MB current=${current}MB file=${API_FILE}"
+}
+
+install() {
+  # Apply the configured limit immediately after installation.
+  apply_plugin_limit || true
+}
+
+plugin_update() {
+  apply_plugin_limit || true
+}
+
+mos_osupdate() {
+  # MOS updates can restore the stock mos-api source.
+  apply_plugin_limit || true
+}
+
+mos_start_after_services() {
+  # Reapply after services start on every boot. If the stock 10 MB value was
+  # restored, apply_plugin_limit patches it and schedules one API restart.
+  apply_plugin_limit || true
+}
+
+uninstall() {
+  # Leave MOS at its stock source limit when this plugin is removed.
+  if [ -f "$SETTINGS_FILE" ]; then
+    local tmp
+    tmp=$(mktemp)
+    jq '.plugin_source_limit_mb = 10' "$SETTINGS_FILE" > "$tmp" && mv "$tmp" "$SETTINGS_FILE"
+    apply_plugin_limit || true
+  fi
+}

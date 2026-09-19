@@ -1,0 +1,16 @@
+{
+  "name": "mos-pluginlimit-page",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@vitejs/plugin-vue": "latest",
+    "vite": "latest",
+    "vue": "latest",
+    "@originjs/vite-plugin-federation": "latest"
+  },
+  "devDependencies": {}
+}

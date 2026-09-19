@@ -33,6 +33,9 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Building version: $VERSION"
 
+      - name: Download icon
+        run: wget -O icon.png "https://raw.githubusercontent.com/mfleming1290/mos-hub/main/images/plugin-source-limitIcon.png"
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -55,6 +58,7 @@ jobs:
           mkdir -p "${PKG_DIR}/DEBIAN"
 
           cp -R page/dist/pluginlimit/* "${PKG_DIR}/var/www/mos-plugins/pluginlimit/"
+          cp icon.png "${PKG_DIR}/var/www/mos-plugins/pluginlimit/"
 
           cat > "${PKG_DIR}/DEBIAN/control" << CONTROL
           Package: mos-pluginlimit-plugin

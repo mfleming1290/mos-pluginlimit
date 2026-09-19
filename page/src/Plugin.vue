@@ -107,7 +107,7 @@ const saveAndApply = async () => {
     await saveSettings(limitMb.value);
     await runFunction('apply_plugin_limit');
     messageType.value = 'success';
-    message.value = `Configured ${limitMb.value} MB. MOS API will restart in about 2 seconds; this page may briefly lose connection.`;
+    message.value = `Configured ${limitMb.value} MB. MOS API will restart in about 5 seconds; this page may briefly lose connection.`;
   } catch (error) {
     messageType.value = 'error';
     message.value = error.message;

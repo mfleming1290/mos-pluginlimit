@@ -36,7 +36,7 @@ _restart_api_delayed() {
   # Delay restart long enough for the API request that invoked this function
   # to return to the UI before the API process is recycled.
   (
-    sleep 2
+    sleep 5
     /etc/init.d/api restart >/dev/null 2>&1
   ) &
 }
@@ -80,7 +80,7 @@ apply_plugin_limit() {
     return 1
   fi
 
-  _log "Plugin source limit changed to ${limit} MB. Restarting MOS API in 2 seconds."
+  _log "Plugin source limit changed to ${limit} MB. Restarting MOS API in 5 seconds."
   _restart_api_delayed
   return 0
 }
